@@ -1,6 +1,6 @@
 import * as React from "react";
 import styled from "styled-components";
-import Sticky from "./Sticky";
+import Sticky from "./Sticky2";
 import Dummy from "./Dummy";
 
 import "sanitize.css";
@@ -34,14 +34,19 @@ export default () => {
       <Container>
         <Row>
           <Column>
-            <Dummy />
+            <Dummy amount={5} />
+          </Column>
+        </Row>
+        <Row>
+          <Column>
+            <Dummy amount={20} />
           </Column>
           <Column ref={parentRef}>
             <Sticky parentRef={parentRef} />
           </Column>
         </Row>
         <Row>
-          <Column style={{ backgroundColor: "cyan" }}>
+          <Column style={{ marginTop: 100, backgroundColor: "cyan" }}>
             <Dummy />
           </Column>
         </Row>

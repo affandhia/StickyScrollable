@@ -1,11 +1,17 @@
-import React from "react";
+import * as React from "react";
 
-const dummy = Array.from(Array(100).keys(), i => i / 100);
+const arrayGenerator = amount => Array.from(Array(amount).keys(), i => i);
 
-export default () => (
+const Dummy = props => (
   <>
-    {dummy.map(i => (
-      <p key={i}>this is placeholder {i}</p>
+    {arrayGenerator(props.amount).map(i => (
+      <p key={i}>this is placeholder {i + 1}</p>
     ))}
   </>
 );
+
+Dummy.defaultProps = {
+  amount: 100
+};
+
+export default Dummy;
