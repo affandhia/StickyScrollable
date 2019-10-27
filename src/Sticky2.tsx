@@ -4,10 +4,13 @@ import { useScrollPosition } from "@n8tb1t/use-scroll-position";
 import Dummy from "./Dummy";
 
 const Container = styled.div.attrs(props => ({
-  style: {
-    transform: `translateY(${props.top}px)`
-  }
+  style: props.isUsingTransform
+    ? {
+        transform: `translateY(${props.top}px)`
+      }
+    : { top: `${props.top - 1}px` }
 }))`
+  position: absolute;
   width: 100%;
   background-color: green;
 `;
@@ -61,20 +64,27 @@ const ScrollableBody = styled.div.attrs(props => ({
 `;
 
 const Sticky = props => {
-  const { parentRef, isShowThreshold, topOffset, minHeight } = props;
+  const {
+    parentRef,
+    isShowThreshold,
+    topOffset,
+    minHeight,
+    isUsingTransform
+  } = props;
 
-  const [scrollY, setScrollY] = React.useState(0);
+  // Window scrollTop location
+  const [scrollTop, setScrollTop] = React.useState(0);
   const [bodyHeight, setBodyHeight] = React.useState();
-  const thisRef = React.useRef(null);
+  const containerRef = React.useRef(null);
   const bodyRef = React.useRef(null);
   let originalBodyHeight = React.useRef(0);
-  let originalSelfHeight = React.useRef(0);
-  // Adjustor TODO: define this
+  let originalContainerHeight = React.useRef(0);
+  // Adjustor to let system know
+  // that body need to be expanded until meet this adjustor offset.
   let adjust = React.useRef(0);
-  // Rectangle for <Container />
-  let selfRect = React.useRef({ top: 0, height: 0 });
-  // Rectangle for Parent Component
+  let containerRect = React.useRef({ top: 0, height: 0 });
   let parentRect = React.useRef({ top: 0, height: 0 });
+  // the offset of parent's bottom side
   const parentEndFromTop = React.useRef(0);
 
   React.useEffect(() => {
@@ -84,17 +94,19 @@ const Sticky = props => {
   }, [parentRect, parentRef]);
 
   React.useLayoutEffect(() => {
-    selfRect.current = thisRef.current.getBoundingClientRect();
-    originalSelfHeight.current = selfRect.current.height;
+    containerRect.current = containerRef.current.getBoundingClientRect();
+    originalContainerHeight.current = containerRect.current.height;
     originalBodyHeight.current = bodyRef.current.getBoundingClientRect().height;
     setBodyHeight(originalBodyHeight.current);
   }, [originalBodyHeight]);
 
   useScrollPosition(
     ({ prevPos, currPos }) => {
-      setScrollY(currPos.y);
+      setScrollTop(currPos.y);
 
+      // it's True when user is scrolling down, otherwise is False
       const isPulling = currPos.y < prevPos.y;
+
       const scrollYFromTopElement = currPos.y - parentRect.current.top;
       const adjustScrollYWithOffset = scrollYFromTopElement + topOffset;
       const normalizedOffset =
@@ -104,15 +116,18 @@ const Sticky = props => {
         !isPulling &&
         normalizedOffset >
           originalBodyHeight.current - minHeight + adjust.current &&
-        normalizedOffset <= parentRect.current.height - selfRect.current.height
+        normalizedOffset <=
+          parentRect.current.height - containerRect.current.height
       ) {
         adjust.current =
           normalizedOffset - originalBodyHeight.current + minHeight;
       } else if (
         !isPulling &&
-        normalizedOffset > parentRect.current.height - selfRect.current.height
+        normalizedOffset >
+          parentRect.current.height - containerRect.current.height
       ) {
-        adjust.current = parentRect.current.height - originalSelfHeight.current;
+        adjust.current =
+          parentRect.current.height - originalContainerHeight.current;
       } else if (isPulling && normalizedOffset < adjust.current) {
         adjust.current = normalizedOffset;
       }
@@ -122,26 +137,26 @@ const Sticky = props => {
 
       setBodyHeight(realHeight >= minHeight ? realHeight : minHeight);
 
-      selfRect.current = thisRef.current.getBoundingClientRect();
+      containerRect.current = containerRef.current.getBoundingClientRect();
 
       bodyRef.current.scrollTop = originalBodyHeight.current;
     },
-    [scrollY],
+    [scrollTop],
     parentRef,
     true
   );
 
-  const scrollYFromTopElement = scrollY - parentRect.current.top;
+  const scrollYFromTopElement = scrollTop - parentRect.current.top;
   let computedOfset = 0;
   if (scrollYFromTopElement + topOffset < 0) {
     computedOfset = 0;
   } else if (
-    scrollYFromTopElement + topOffset + selfRect.current.height >
+    scrollYFromTopElement + topOffset + containerRect.current.height >
     parentRect.current.height
   ) {
     computedOfset =
       parentEndFromTop.current -
-      selfRect.current.height -
+      containerRect.current.height -
       parentRect.current.top;
   } else if (scrollYFromTopElement + topOffset > 0) {
     computedOfset = scrollYFromTopElement + topOffset;
@@ -151,7 +166,11 @@ const Sticky = props => {
     <>
       {isShowThreshold && <Pointer top={adjust.current} />}
       {isShowThreshold && <TopOffsetPointer top={topOffset} />}
-      <Container ref={thisRef} top={computedOfset}>
+      <Container
+        ref={containerRef}
+        top={computedOfset}
+        isUsingTransform={isUsingTransform}
+      >
         <Header />
         <ScrollableBody ref={bodyRef} height={bodyHeight}>
           <Dummy amount={4} />
@@ -163,6 +182,7 @@ const Sticky = props => {
 };
 
 Sticky.defaultProps = {
+  isUsingTransform: true,
   isShowThreshold: true,
   topOffset: 200,
   minHeight: 100
