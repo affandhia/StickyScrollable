@@ -102,10 +102,12 @@ const Sticky = props => {
 
       if (
         !isPulling &&
-        normalizedOffset > originalBodyHeight.current + adjust.current &&
+        normalizedOffset >
+          originalBodyHeight.current - minHeight + adjust.current &&
         normalizedOffset <= parentRect.current.height - selfRect.current.height
       ) {
-        adjust.current = normalizedOffset - originalBodyHeight.current;
+        adjust.current =
+          normalizedOffset - originalBodyHeight.current + minHeight;
       } else if (
         !isPulling &&
         normalizedOffset > parentRect.current.height - selfRect.current.height
