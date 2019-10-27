@@ -1,2 +1,0 @@
-# StickyScrollable
-Created with CodeSandbox
