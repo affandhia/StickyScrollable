@@ -1,7 +1,7 @@
 import * as React from "react";
 import styled from "styled-components";
 import { useScroll } from "react-use-gesture";
-import { animated, useSpring, config } from "react-spring";
+import { animated, useSpring } from "react-spring";
 import bindRaf from "./lib/bindRaf";
 import Cue from "./lib/components/Cue";
 import TopOffsetPointer from "./lib/components/TopOffsetIndicator";
@@ -9,7 +9,6 @@ import TopOffsetPointer from "./lib/components/TopOffsetIndicator";
 const Container = styled(animated.div)`
   position: absolute;
   width: 100%;
-  background: cyan;
 `;
 
 const ScrollableBody = styled(animated.div)`

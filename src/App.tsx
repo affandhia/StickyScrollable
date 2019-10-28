@@ -1,6 +1,6 @@
 import * as React from "react";
 import styled from "styled-components";
-import Sticky from "./StickyPerf";
+import Sticky from "./Sticky";
 import Dummy from "./Dummy";
 
 import "sanitize.css";
