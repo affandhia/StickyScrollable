@@ -1,6 +1,6 @@
 import * as React from "react";
 import styled from "styled-components";
-import Sticky from "./Sticky";
+import Sticky from "./StickyPerf";
 import Dummy from "./Dummy";
 
 import "sanitize.css";
@@ -43,7 +43,12 @@ export default () => {
             <Dummy amount={100} />
           </Column>
           <Column ref={parentRef}>
-            <Sticky parentRef={parentRef} isDebug topOffset={100}>
+            <Sticky
+              parentRef={parentRef}
+              isDebug
+              topOffset={10}
+              minHeight={100}
+            >
               <Dummy amount={5} />
             </Sticky>
           </Column>

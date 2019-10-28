@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps */
+// https://dev.to/n8tb1t/tracking-scroll-position-with-react-hooks-3bbj
 import { useRef, useLayoutEffect } from "react";
 
 const isBrowser = typeof window !== `undefined`;
