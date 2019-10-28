@@ -1,100 +1,180 @@
 import * as React from "react";
 import styled from "styled-components";
-import { useScrollPosition } from "@n8tb1t/use-scroll-position";
-import Dummy from "./Dummy";
+import { useScrollPosition } from "./lib/useScrollEvent";
+import bindRaf from "./lib/bindRaf";
+import Cue from "./lib/components/Cue";
+import TopOffsetPointer from "./lib/components/TopOffsetIndicator";
 
 const Container = styled.div.attrs(props => ({
-  style: {
-    transform: `translateY(${props.top}px)`
-  }
+  style: props.isUsingTransform
+    ? {
+        transform: `translateY(${props.top}px)`
+      }
+    : { top: `${props.top - 1}px` }
 }))`
+  position: absolute;
   width: 100%;
-  background-color: green;
 `;
-
-const BannerHeader = styled.h3`
-  background-color: red;
-  color: yellow;
-`;
-
-const Header = () => {
-  return <BannerHeader>Header</BannerHeader>;
-};
 
 const ScrollableBody = styled.div.attrs(props => ({
-  style: props.height ? { height: `${props.height}px` } : {}
+  style: props.height !== undefined ? { height: `${props.height}px` } : {}
 }))`
-  background: orange;
   overflow-y: hidden;
 `;
 
-const topOffset = 10;
-const minHeight = 100;
+interface StickyProps {
+  parentRef: any;
+  isDebug: boolean;
+  isRAFSync: boolean;
+  topOffset: number;
+  minHeight: number;
+  isUsingTransform: boolean;
+  header: any;
+  footer: any;
+  children: React.ReactChildren;
+}
 
-const Sticky = ({ parentRef }) => {
-  const [offset, setOffset] = React.useState(0);
-  const [height, setHeight] = React.useState(null);
-  const thisRef = React.useRef(null);
+const Sticky = (props: StickyProps) => {
+  const {
+    parentRef,
+    isDebug,
+    isRAFSync,
+    topOffset,
+    minHeight,
+    isUsingTransform,
+    header,
+    footer,
+    children
+  } = props;
+
+  // Window scrollTop location
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const [bodyHeight, setBodyHeight] = React.useState();
+  const containerRef = React.useRef(null);
   const bodyRef = React.useRef(null);
   let originalBodyHeight = React.useRef(0);
-  let selfRect = React.useRef({ top: 0, height: 0 });
+  let originalContainerHeight = React.useRef(0);
+  // Adjustor to let system know
+  // that body need to be expanded until meet this adjustor offset.
+  let cueLocation = React.useRef(0);
+  let containerRect = React.useRef({ top: 0, height: 0 });
   let parentRect = React.useRef({ top: 0, height: 0 });
+  // the offset of parent's bottom side
+  const parentEndFromTop = React.useRef(0);
+
+  const requestAnimationId = React.useRef(0);
 
   React.useEffect(() => {
     parentRect.current = parentRef.current.getBoundingClientRect();
+    parentEndFromTop.current =
+      parentRect.current.top + parentRect.current.height;
   }, [parentRect, parentRef]);
 
   React.useLayoutEffect(() => {
+    containerRect.current = containerRef.current.getBoundingClientRect();
+    originalContainerHeight.current = containerRect.current.height;
+
     originalBodyHeight.current = bodyRef.current.getBoundingClientRect().height;
-    setHeight(originalBodyHeight.current);
-    console.log("didmount", originalBodyHeight.current);
-  }, [originalBodyHeight, bodyRef]);
+    setBodyHeight(originalBodyHeight.current);
+  }, [originalBodyHeight]);
 
   useScrollPosition(
     ({ prevPos, currPos }) => {
-      const parentEndFromTop =
-        parentRect.current.top + parentRect.current.height;
+      const isScrollingUp = currPos.y < prevPos.y;
+      const isScrollingDown = !isScrollingUp;
 
-      const scrollYFromTopElement = currPos.y - parentRect.current.top;
+      const scrollYRelativeToParent = currPos.y - parentRect.current.top;
+      const scrollYWithOffset = scrollYRelativeToParent + topOffset;
+      const scrollYPositive = scrollYWithOffset > 0 ? scrollYWithOffset : 0;
 
-      if (scrollYFromTopElement + topOffset < 0) {
-        setOffset(0);
-        setHeight(originalBodyHeight);
-      } else if (
-        scrollYFromTopElement + topOffset + selfRect.current.height >
-        parentRect.current.height
-      ) {
-        setOffset(
-          parentEndFromTop - selfRect.current.height - parentRect.current.top
-        );
-      } else if (scrollYFromTopElement + topOffset > 0) {
-        const newHeight = originalBodyHeight.current - scrollYFromTopElement;
-
-        setOffset(scrollYFromTopElement + topOffset);
-        if (newHeight > minHeight) {
-          setHeight(newHeight);
-        } else {
-          setHeight(minHeight);
-        }
-
-        bodyRef.current.scrollTop = originalBodyHeight.current;
+      if (cueLocation.current < scrollYWithOffset) {
+        cancelAnimationFrame(requestAnimationId.current);
       }
+
+      const isDraggingCueDown =
+        scrollYPositive >
+        originalBodyHeight.current - minHeight + cueLocation.current;
+      const isDraggingCueUp = scrollYPositive < cueLocation.current;
+      const isContainerNotOnBottom =
+        scrollYPositive <=
+        parentRect.current.height - containerRect.current.height;
+      const isContainerOnBottom = !isContainerNotOnBottom;
+
+      if (isScrollingDown && isDraggingCueDown && isContainerNotOnBottom) {
+        cueLocation.current =
+          scrollYPositive - originalBodyHeight.current + minHeight;
+      } else if (isScrollingDown && isContainerOnBottom) {
+        cueLocation.current =
+          parentRect.current.height - originalContainerHeight.current;
+      } else if (isScrollingUp && isDraggingCueUp) {
+        cueLocation.current = scrollYPositive;
+      }
+
+      const realHeight =
+        originalBodyHeight.current - scrollYPositive + cueLocation.current;
+
+      const procedure = () => {
+        // update state
+        setScrollTop(currPos.y);
+        setBodyHeight(realHeight >= minHeight ? realHeight : minHeight);
+
+        // update containerRect
+        containerRect.current = containerRef.current.getBoundingClientRect();
+
+        // set scrollTop to bottom of page
+        bodyRef.current.scrollTop = originalBodyHeight.current;
+      };
+
+      const exec = isRAFSync ? bindRaf(procedure, true) : procedure;
+
+      exec();
     },
-    [offset, height],
+    [scrollTop],
     parentRef,
     true
   );
 
+  const scrollYFromTopElement = scrollTop - parentRect.current.top + topOffset;
+  const isContainerReachBottom =
+    scrollYFromTopElement + containerRect.current.height >
+    parentRect.current.height;
+  let computedOfset = 0;
+  if (scrollYFromTopElement < 0) {
+    computedOfset = 0;
+  } else if (isContainerReachBottom) {
+    computedOfset =
+      parentEndFromTop.current -
+      containerRect.current.height -
+      parentRect.current.top;
+  } else if (scrollYFromTopElement > 0) {
+    computedOfset = scrollYFromTopElement;
+  }
+
   return (
     <>
-      <Container ref={thisRef} top={offset}>
-        <Header />
-        <ScrollableBody ref={bodyRef} height={height}>
-          <Dummy amount={10} />
+      {isDebug && <Cue top={cueLocation.current} />}
+      {isDebug && <TopOffsetPointer top={topOffset} />}
+      <Container
+        ref={containerRef}
+        top={computedOfset}
+        isUsingTransform={isUsingTransform}
+      >
+        {header}
+        <ScrollableBody ref={bodyRef} height={bodyHeight}>
+          {children}
         </ScrollableBody>
+        {footer}
       </Container>
     </>
   );
+};
+
+Sticky.defaultProps = {
+  isUsingTransform: true,
+  isRAFSync: false,
+  isDebug: false,
+  topOffset: 0,
+  minHeight: 0
 };
 
 export default Sticky;

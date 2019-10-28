@@ -1,6 +1,6 @@
 import * as React from "react";
 import styled from "styled-components";
-import Sticky from "./Sticky2";
+import Sticky from "./Sticky";
 import Dummy from "./Dummy";
 
 import "sanitize.css";
@@ -8,6 +8,7 @@ import "sanitize.css";
 const Container = styled.div`
   display: flex;
   flex-direction: column;
+  width: 100%;
 `;
 const Row = styled.div`
   display: flex;
@@ -22,7 +23,7 @@ const Column = styled.div`
   color: red;
   display: flex;
   flex-direction: column;
-  flex-basis: 100%;
+  flex-basis: 1;
   flex: 1;
 `;
 
@@ -39,10 +40,12 @@ export default () => {
         </Row>
         <Row>
           <Column>
-            <Dummy amount={20} />
+            <Dummy amount={100} />
           </Column>
           <Column ref={parentRef}>
-            <Sticky parentRef={parentRef} />
+            <Sticky parentRef={parentRef} isDebug topOffset={100}>
+              <Dummy amount={5} />
+            </Sticky>
           </Column>
         </Row>
         <Row>
