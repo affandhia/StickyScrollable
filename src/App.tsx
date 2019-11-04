@@ -1,6 +1,6 @@
 import * as React from "react";
 import styled from "styled-components";
-import Sticky from "./Sticky";
+import Sticky from "./StickyNative";
 import Dummy from "./Dummy";
 
 import "sanitize.css";
@@ -46,7 +46,7 @@ export default () => {
             <Sticky
               parentRef={parentRef}
               isDebug
-              topOffset={10}
+              topOffset={200}
               minHeight={100}
             >
               <Dummy amount={5} />
