@@ -48,8 +48,9 @@ export default () => {
               isDebug
               topOffset={200}
               minHeight={100}
+              bottomOffset={20}
             >
-              <Dummy amount={20} />
+              <Dummy amount={6} />
             </Sticky>
           </Column>
         </Row>

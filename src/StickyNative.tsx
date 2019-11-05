@@ -1,6 +1,5 @@
 import * as React from "react";
-import { View, Animated, Easing } from "react-native";
-import styled from "styled-components";
+import { Animated } from "react-native";
 import { useScrollPosition } from "./lib/useScrollEvent";
 import bindRaf from "./lib/bindRaf";
 import Cue from "./lib/components/Cue";
@@ -11,6 +10,7 @@ interface StickyProps {
   isDebug: boolean;
   isRAFSync: boolean;
   topOffset: number;
+  bottomOffset?: number;
   minHeight: number;
   isUsingTransform: boolean;
   header: any;
@@ -24,6 +24,7 @@ const Sticky = (props: StickyProps) => {
     isDebug,
     isRAFSync,
     topOffset,
+    bottomOffset,
     minHeight,
     isUsingTransform,
     header,
@@ -31,9 +32,6 @@ const Sticky = (props: StickyProps) => {
     children
   } = props;
 
-  // Window scrollTop location
-  const [scrollTop, setScrollTop] = React.useState(0);
-  const [bodyHeight, setBodyHeight] = React.useState();
   const containerRef = React.useRef(null);
   const bodyRef = React.useRef(null);
   let originalBodyHeight = React.useRef(0);
@@ -45,6 +43,8 @@ const Sticky = (props: StickyProps) => {
   let parentRect = React.useRef({ top: 0, height: 0 });
   // the offset of parent's bottom side
   const parentEndFromTop = React.useRef(0);
+  const heightAV = React.useRef(new Animated.Value(-1));
+  const topAV = React.useRef(new Animated.Value(-1));
 
   React.useEffect(() => {
     parentRect.current = parentRef.current.getBoundingClientRect();
@@ -59,6 +59,11 @@ const Sticky = (props: StickyProps) => {
     });
   }, []);
 
+  const setInitialOriginalHeight = React.useCallback((_, h) => {
+    originalBodyHeight.current = h;
+    heightAV.current.setValue(h);
+  }, []);
+
   React.useLayoutEffect(() => {
     setContainerRect(() => {
       originalContainerHeight.current = containerRect.current.height;
@@ -67,6 +72,18 @@ const Sticky = (props: StickyProps) => {
 
   useScrollPosition(
     ({ prevPos, currPos }) => {
+      const wHeight = window ? window.innerHeight : 0;
+      let finalMinHeight = 0;
+      const topBottomHeight = wHeight - topOffset - bottomOffset;
+      if (bottomOffset && containerRect.current.height >= topBottomHeight) {
+        finalMinHeight = topBottomHeight;
+      } else if (
+        bottomOffset &&
+        containerRect.current.height < topBottomHeight
+      ) {
+        finalMinHeight = containerRect.current.height;
+      } else finalMinHeight = minHeight;
+
       const isScrollingUp = currPos.y < prevPos.y;
       const isScrollingDown = !isScrollingUp;
 
@@ -76,7 +93,7 @@ const Sticky = (props: StickyProps) => {
 
       const isDraggingCueDown =
         scrollYPositive >
-        originalBodyHeight.current - minHeight + cueLocation.current;
+        originalBodyHeight.current - finalMinHeight + cueLocation.current;
       const isDraggingCueUp = scrollYPositive < cueLocation.current;
       const isContainerNotOnBottom =
         scrollYPositive <=
@@ -85,7 +102,7 @@ const Sticky = (props: StickyProps) => {
 
       if (isScrollingDown && isDraggingCueDown && isContainerNotOnBottom) {
         cueLocation.current =
-          scrollYPositive - originalBodyHeight.current + minHeight;
+          scrollYPositive - originalBodyHeight.current + finalMinHeight;
       } else if (isScrollingDown && isContainerOnBottom) {
         cueLocation.current =
           parentRect.current.height - originalContainerHeight.current;
@@ -93,13 +110,32 @@ const Sticky = (props: StickyProps) => {
         cueLocation.current = scrollYPositive;
       }
 
-      const realHeight =
-        originalBodyHeight.current - scrollYPositive + cueLocation.current;
-
       const procedure = () => {
-        // update state
-        setScrollTop(currPos.y);
-        setBodyHeight(realHeight >= minHeight ? realHeight : minHeight);
+        // set Top
+        const scrollYFromTopElement =
+          currPos.y - parentRect.current.top + topOffset;
+        const isContainerReachBottom =
+          scrollYFromTopElement + containerRect.current.height >
+          parentRect.current.height;
+        let computedOfset = 0;
+        if (scrollYFromTopElement < 0) {
+          computedOfset = 0;
+        } else if (isContainerReachBottom) {
+          computedOfset =
+            parentEndFromTop.current -
+            containerRect.current.height -
+            parentRect.current.top;
+        } else if (scrollYFromTopElement > 0) {
+          computedOfset = scrollYFromTopElement;
+        }
+        topAV.current.setValue(computedOfset);
+
+        // set Height
+        const realHeight =
+          originalBodyHeight.current - scrollYPositive + cueLocation.current;
+        heightAV.current.setValue(
+          realHeight >= finalMinHeight ? realHeight : finalMinHeight
+        );
 
         // update containerRect
         setContainerRect();
@@ -115,35 +151,10 @@ const Sticky = (props: StickyProps) => {
 
       exec();
     },
-    [scrollTop],
+    [topAV],
     parentRef,
     true
   );
-
-  const scrollYFromTopElement = scrollTop - parentRect.current.top + topOffset;
-  const isContainerReachBottom =
-    scrollYFromTopElement + containerRect.current.height >
-    parentRect.current.height;
-  let computedOfset = 0;
-  if (scrollYFromTopElement < 0) {
-    computedOfset = 0;
-  } else if (isContainerReachBottom) {
-    computedOfset =
-      parentEndFromTop.current -
-      containerRect.current.height -
-      parentRect.current.top;
-  } else if (scrollYFromTopElement > 0) {
-    computedOfset = scrollYFromTopElement;
-  }
-
-  const heightAV = React.useRef(new Animated.Value(-1));
-
-  React.useEffect(() => {
-    Animated.timing(heightAV.current, {
-      toValue: bodyHeight,
-      duration: 0
-    }).start();
-  }, [bodyHeight]);
 
   return (
     <>
@@ -151,20 +162,26 @@ const Sticky = (props: StickyProps) => {
       {isDebug && <TopOffsetPointer top={topOffset} />}
       <Animated.View
         ref={containerRef}
-        style={{
-          top: computedOfset
-        }}
+        style={
+          isUsingTransform
+            ? {
+                transform: [
+                  {
+                    translateY: topAV.current
+                  }
+                ]
+              }
+            : {
+                top: topAV.current
+              }
+        }
       >
         {header}
         <Animated.ScrollView
-          onContentSizeChange={(_, h) => {
-            originalBodyHeight.current = h;
-            setBodyHeight(h);
-          }}
+          onContentSizeChange={setInitialOriginalHeight}
           ref={bodyRef}
           style={{
-            height: bodyHeight,
-            backgroundColor: "cyan",
+            height: heightAV.current,
             overflowY: "hidden"
           }}
         >
