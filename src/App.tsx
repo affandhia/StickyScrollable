@@ -49,7 +49,7 @@ export default () => {
               topOffset={200}
               minHeight={100}
             >
-              <Dummy amount={5} />
+              <Dummy amount={20} />
             </Sticky>
           </Column>
         </Row>
