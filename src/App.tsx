@@ -48,9 +48,11 @@ export default () => {
               isDebug
               topOffset={200}
               minHeight={100}
-              bottomOffset={20}
+              bottomOffset={50}
+              header={<Dummy style={{ backgroundColor: "cyan" }} amount={2} />}
+              footer={<Dummy style={{ backgroundColor: "cyan" }} amount={2} />}
             >
-              <Dummy amount={6} />
+              <Dummy style={{ backgroundColor: "cyan" }} amount={3} />
             </Sticky>
           </Column>
         </Row>

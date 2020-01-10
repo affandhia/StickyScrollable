@@ -1,204 +1,249 @@
 import * as React from "react";
-import { Animated } from "react-native";
-import { useScrollPosition } from "./lib/useScrollEvent";
-import bindRaf from "./lib/bindRaf";
-import Cue from "./lib/components/Cue";
-import TopOffsetPointer from "./lib/components/TopOffsetIndicator";
+import { Animated, View } from "react-native";
+import { CallbackParameter, useScrollPosition } from "./useScrollEvent";
 
-interface StickyProps {
+interface DetailScrollableStickyProps {
   parentRef: any;
   isDebug: boolean;
-  isRAFSync: boolean;
   topOffset: number;
   bottomOffset?: number;
   minHeight: number;
   isUsingTransform: boolean;
-  header: any;
-  footer: any;
-  children: React.ReactChildren;
+  header?: React.ReactElement;
+  footer?: React.ReactElement;
+  children: React.ReactNode;
+  style?: Object;
+  bodyStyle?: Object;
 }
 
-const Sticky = (props: StickyProps) => {
+interface Rectangle {
+  height: number;
+  top: number;
+}
+
+const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
   const {
     parentRef,
-    isDebug,
-    isRAFSync,
     topOffset,
     bottomOffset,
     minHeight,
     isUsingTransform,
+    isDebug,
     header,
     footer,
-    children
+    children,
+    style,
+    bodyStyle,
   } = props;
 
-  const containerRef = React.useRef(null);
-  const bodyRef = React.useRef(null);
-  let originalBodyHeight = React.useRef(0);
-  let originalContainerHeight = React.useRef(0);
+  // type any due to https://stackoverflow.com/questions/51521809/typescript-definitions-for-animated-views-style-prop
+  const containerRef = React.useRef<any>(null);
+  const bodyRef = React.useRef<any>(null);
+  const bodyWrapperRef = React.useRef<any>(null);
+
+  const originalBodyHeight = React.useRef<number>(0);
+  const originalBodyWrapperHeight = React.useRef<number>(0);
+  const originalContainerHeight = React.useRef<number>(0);
+  const maxScrollable = React.useRef<number>(0);
   // Adjustor to let system know
   // that body need to be expanded until meet this adjustor offset.
-  let cueLocation = React.useRef(0);
-  let containerRect = React.useRef({ top: 0, height: 0 });
-  let parentRect = React.useRef({ top: 0, height: 0 });
+  const scrollPosition = React.useRef<number>(0);
+  const containerRect = React.useRef<Rectangle>({ top: 0, height: 0 });
+  const parentRect = React.useRef<Rectangle>({ top: 0, height: 0 });
   // the offset of parent's bottom side
-  const parentEndFromTop = React.useRef(0);
-  const heightAV = React.useRef(new Animated.Value(-1));
-  const topAV = React.useRef(new Animated.Value(-1));
+  const parentEndFromTop = React.useRef<number>(0);
+  const heightAV = React.useRef<any>(new Animated.Value(-1));
+  const topAV = React.useRef<any>(new Animated.Value(-1));
 
-  React.useEffect(() => {
-    parentRect.current = parentRef.current.getBoundingClientRect();
+  const setParentInfo = React.useCallback(() => {
+    const pHeight = parentRef.current.getBoundingClientRect().height;
+    const pTop = parentRef.current.offsetTop;
+    parentRect.current = { top: pTop, height: pHeight };
     parentEndFromTop.current =
       parentRect.current.top + parentRect.current.height;
-  }, [parentRect, parentRef]);
+  }, [parentRef, parentRect, parentEndFromTop]);
 
-  const setContainerRect = React.useCallback((callback?: Function) => {
-    containerRef.current._component.measure((...args: any) => {
-      containerRect.current = { top: args[1], height: args[3] };
-      callback && callback(args);
-    });
+  React.useEffect(() => {
+    setParentInfo();
+  }, [parentRect, parentRef, setParentInfo]);
+
+  const setContainerRect = React.useCallback(
+    (callback?: Function) => {
+      containerRef.current &&
+        containerRef.current._component.measure((...args: any) => {
+          const wHeight = window ? window.innerHeight : -1;
+          const cHeight = args[3];
+          const isUseMinHeight = wHeight < 0 || !bottomOffset;
+          const tempHeight = isUseMinHeight
+            ? minHeight
+            : wHeight - topOffset - (bottomOffset ? bottomOffset : 0);
+          const finalHeight = tempHeight > cHeight ? cHeight : tempHeight;
+          containerRect.current = { top: args[5], height: finalHeight };
+          heightAV.current.setValue(finalHeight);
+          console.log(cHeight, bottomOffset, tempHeight);
+          callback && callback(args);
+        });
+    },
+    [bottomOffset, topOffset, minHeight]
+  );
+
+  const setInitialOriginalHeight = React.useCallback((_, svHeight) => {
+    originalBodyHeight.current = svHeight;
+    bodyWrapperRef.current &&
+      bodyWrapperRef.current._component &&
+      bodyWrapperRef.current._component.measure((...args: any) => {
+        const bwHeight = args[3];
+        console.warn(">>>>", svHeight, bwHeight);
+        maxScrollable.current = svHeight - bwHeight;
+      });
   }, []);
 
-  const setInitialOriginalHeight = React.useCallback((_, h) => {
-    originalBodyHeight.current = h;
-    heightAV.current.setValue(h);
+  const setScrollViewHeight = React.useCallback(event => {
+    const { height } = event.nativeEvent.layout;
+    originalBodyWrapperHeight.current = height;
+    maxScrollable.current = originalBodyHeight.current - height;
+  }, []);
+
+  const setScrollOnScrolled = React.useCallback(event => {
+    scrollPosition.current = event.nativeEvent.contentOffset.y;
   }, []);
 
   React.useLayoutEffect(() => {
-    setContainerRect(() => {
-      originalContainerHeight.current = containerRect.current.height;
+    setContainerRect((args: number[]) => {
+      originalContainerHeight.current = args[3];
     });
   }, [setContainerRect]);
 
   useScrollPosition(
-    ({ prevPos, currPos }) => {
-      const wHeight = window ? window.innerHeight : 0;
-      let finalMinHeight = 0;
-      const topBottomHeight = wHeight - topOffset - bottomOffset;
-      if (bottomOffset && containerRect.current.height >= topBottomHeight) {
-        finalMinHeight = topBottomHeight;
-      } else if (
-        bottomOffset &&
-        containerRect.current.height < topBottomHeight
-      ) {
-        finalMinHeight = containerRect.current.height;
-      } else finalMinHeight = minHeight;
-
-      const isScrollingUp = currPos.y < prevPos.y;
-      const isScrollingDown = !isScrollingUp;
+    (pos: CallbackParameter) => {
+      const { prevPos, currPos } = pos;
+      setParentInfo(); // handling content reflow caused by post-ssr render
 
       const scrollYRelativeToParent = currPos.y - parentRect.current.top;
       const scrollYWithOffset = scrollYRelativeToParent + topOffset;
       const scrollYPositive = scrollYWithOffset > 0 ? scrollYWithOffset : 0;
-
-      const isDraggingCueDown =
-        scrollYPositive >
-        originalBodyHeight.current - finalMinHeight + cueLocation.current;
-      const isDraggingCueUp = scrollYPositive < cueLocation.current;
-      const isContainerNotOnBottom =
-        scrollYPositive <=
-        parentRect.current.height - containerRect.current.height;
-      const isContainerOnBottom = !isContainerNotOnBottom;
-
-      if (isScrollingDown && isDraggingCueDown && isContainerNotOnBottom) {
-        cueLocation.current =
-          scrollYPositive - originalBodyHeight.current + finalMinHeight;
-      } else if (isScrollingDown && isContainerOnBottom) {
-        cueLocation.current =
-          parentRect.current.height - originalContainerHeight.current;
-      } else if (isScrollingUp && isDraggingCueUp) {
-        cueLocation.current = scrollYPositive;
-      }
+      if (scrollYPositive > parentRect.current.height) return;
 
       const procedure = () => {
         // set Top
-        const scrollYFromTopElement =
-          currPos.y - parentRect.current.top + topOffset;
-        const isContainerReachBottom =
-          scrollYFromTopElement + containerRect.current.height >
-          parentRect.current.height;
         let computedOfset = 0;
-        if (scrollYFromTopElement < 0) {
-          computedOfset = 0;
-        } else if (isContainerReachBottom) {
+        const isContainerReachBottom =
+          scrollYPositive + containerRect.current.height >=
+          parentRect.current.height;
+        if (isContainerReachBottom) {
           computedOfset =
-            parentEndFromTop.current -
-            containerRect.current.height -
-            parentRect.current.top;
-        } else if (scrollYFromTopElement > 0) {
-          computedOfset = scrollYFromTopElement;
+            parentRect.current.height - containerRect.current.height;
+        } else {
+          computedOfset = scrollYPositive;
         }
         topAV.current.setValue(computedOfset);
 
-        // set Height
-        const realHeight =
-          originalBodyHeight.current - scrollYPositive + cueLocation.current;
-        heightAV.current.setValue(
-          realHeight >= finalMinHeight ? realHeight : finalMinHeight
-        );
-
-        // update containerRect
-        setContainerRect();
-
         // set scrollTop to bottom of page
-        bodyRef.current._component.scrollTo({
-          y: originalBodyHeight.current,
-          animated: false
-        });
+        const diff = currPos.y - prevPos.y;
+        const spVal = scrollPosition.current + diff;
+
+        const clampedVal =
+          spVal >= maxScrollable.current ? maxScrollable.current : spVal;
+        scrollPosition.current = spVal < 0 ? 0 : clampedVal;
+        bodyRef.current &&
+          bodyRef.current._component.scrollTo({
+            y: scrollPosition.current,
+            animated: false,
+          });
       };
 
-      const exec = isRAFSync ? bindRaf(procedure, true) : procedure;
-
-      exec();
+      procedure();
     },
-    [topAV],
+    [topAV, maxScrollable],
     parentRef,
     true
   );
 
+  const containerStyle = isUsingTransform
+    ? {
+        height: heightAV.current,
+        transform: [
+          {
+            translateY: topAV.current,
+          },
+        ],
+      }
+    : {
+        height: heightAV.current,
+        top: topAV.current,
+      };
+
+  const staticStyle = {
+    overflow: "auto",
+    display: "flex",
+    flexDirection: "column",
+  };
+
+  const containerItemStyle = {
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+  };
+
   return (
     <>
-      {isDebug && <Cue top={cueLocation.current} />}
-      {isDebug && <TopOffsetPointer top={topOffset} />}
       <Animated.View
         ref={containerRef}
-        style={
-          isUsingTransform
-            ? {
-                transform: [
-                  {
-                    translateY: topAV.current
-                  }
-                ]
-              }
-            : {
-                top: topAV.current
-              }
-        }
+        style={[
+          containerStyle,
+          staticStyle,
+          isDebug && {
+            borderColor: "orange",
+            borderWidth: 2,
+          },
+          style,
+        ]}
       >
-        {header}
-        <Animated.ScrollView
-          onContentSizeChange={setInitialOriginalHeight}
-          ref={bodyRef}
-          style={{
-            height: heightAV.current,
-            overflowY: "hidden"
-          }}
+        <View style={[{ flexGrow: 0, flexShrink: 0, flexBasis: "auto" }]}>
+          {header}
+        </View>
+        <Animated.View
+          ref={bodyWrapperRef}
+          onLayout={setScrollViewHeight}
+          style={[
+            containerItemStyle,
+            { flexGrow: 1, flexShrink: 1 },
+            isDebug && { borderColor: "red", borderWidth: 2 },
+          ]}
         >
-          {children}
-        </Animated.ScrollView>
-        {footer}
+          <Animated.ScrollView
+            onContentSizeChange={(w, h) => {
+              console.warn("onContentSizeChange is TRIGGERED!");
+              setInitialOriginalHeight(w, h);
+            }}
+            onScroll={setScrollOnScrolled}
+            scrollEventThrottle={16}
+            ref={bodyRef}
+            style={[
+              {
+                overflowY: "scroll",
+                height: "100%",
+              },
+              bodyStyle,
+            ]}
+          >
+            {/* https://stackoverflow.com/a/53689186 */}
+            <>{children}</>
+          </Animated.ScrollView>
+        </Animated.View>
+        <View style={[{ flexBasis: "auto", flexShrink: 0, flexGrow: 0 }]}>
+          {footer}
+        </View>
       </Animated.View>
     </>
   );
 };
 
-Sticky.defaultProps = {
-  isUsingTransform: true,
-  isRAFSync: false,
+DetailScrollableSticky.defaultProps = {
+  isUsingTransform: false,
   isDebug: false,
   topOffset: 0,
-  minHeight: 0
+  minHeight: 0,
 };
 
-export default Sticky;
+export default DetailScrollableSticky;
