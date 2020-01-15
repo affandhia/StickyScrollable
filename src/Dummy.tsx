@@ -14,7 +14,15 @@ const DummyItem = props => {
       >
         this is placeholder {i + 1}
       </p>
-      {show && <p>dropdown</p>}
+      {show && (
+        <>
+          {Array(10)
+            .fill(1)
+            .map(() => (
+              <p>dropdown</p>
+            ))}
+        </>
+      )}
     </>
   );
 };

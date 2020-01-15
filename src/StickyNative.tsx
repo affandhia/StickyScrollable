@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Animated, View } from "react-native";
+import { Animated, View, findNodeHandle } from "react-native";
 import { CallbackParameter, useScrollPosition } from "./useScrollEvent";
 
 interface DetailScrollableStickyProps {
@@ -33,7 +33,7 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
     footer,
     children,
     style,
-    bodyStyle,
+    bodyStyle
   } = props;
 
   // type any due to https://stackoverflow.com/questions/51521809/typescript-definitions-for-animated-views-style-prop
@@ -44,7 +44,6 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
   const originalBodyHeight = React.useRef<number>(0);
   const originalBodyWrapperHeight = React.useRef<number>(0);
   const originalContainerHeight = React.useRef<number>(0);
-  const maxScrollable = React.useRef<number>(0);
   // Adjustor to let system know
   // that body need to be expanded until meet this adjustor offset.
   const scrollPosition = React.useRef<number>(0);
@@ -80,28 +79,23 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
           const finalHeight = tempHeight > cHeight ? cHeight : tempHeight;
           containerRect.current = { top: args[5], height: finalHeight };
           heightAV.current.setValue(finalHeight);
-          console.log(cHeight, bottomOffset, tempHeight);
           callback && callback(args);
         });
     },
     [bottomOffset, topOffset, minHeight]
   );
 
+  const getScrollViewContentHeight = React.useCallback(() => {
+    return bodyRef.current ? findNodeHandle(bodyRef.current).scrollHeight : 0;
+  }, []);
+
   const setInitialOriginalHeight = React.useCallback((_, svHeight) => {
     originalBodyHeight.current = svHeight;
-    bodyWrapperRef.current &&
-      bodyWrapperRef.current._component &&
-      bodyWrapperRef.current._component.measure((...args: any) => {
-        const bwHeight = args[3];
-        console.warn(">>>>", svHeight, bwHeight);
-        maxScrollable.current = svHeight - bwHeight;
-      });
   }, []);
 
   const setScrollViewHeight = React.useCallback(event => {
     const { height } = event.nativeEvent.layout;
     originalBodyWrapperHeight.current = height;
-    maxScrollable.current = originalBodyHeight.current - height;
   }, []);
 
   const setScrollOnScrolled = React.useCallback(event => {
@@ -111,6 +105,11 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
   React.useLayoutEffect(() => {
     setContainerRect((args: number[]) => {
       originalContainerHeight.current = args[3];
+      bodyWrapperRef.current &&
+        bodyWrapperRef.current._component.measure((...args: any) => {
+          const cHeight = args[3];
+          originalBodyWrapperHeight.current = cHeight;
+        });
     });
   }, [setContainerRect]);
 
@@ -141,20 +140,21 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
         // set scrollTop to bottom of page
         const diff = currPos.y - prevPos.y;
         const spVal = scrollPosition.current + diff;
+        const max =
+          getScrollViewContentHeight() - originalBodyWrapperHeight.current;
 
-        const clampedVal =
-          spVal >= maxScrollable.current ? maxScrollable.current : spVal;
+        const clampedVal = spVal >= max ? max : spVal;
         scrollPosition.current = spVal < 0 ? 0 : clampedVal;
         bodyRef.current &&
           bodyRef.current._component.scrollTo({
             y: scrollPosition.current,
-            animated: false,
+            animated: false
           });
       };
 
       procedure();
     },
-    [topAV, maxScrollable],
+    [topAV],
     parentRef,
     true
   );
@@ -164,25 +164,25 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
         height: heightAV.current,
         transform: [
           {
-            translateY: topAV.current,
-          },
-        ],
+            translateY: topAV.current
+          }
+        ]
       }
     : {
         height: heightAV.current,
-        top: topAV.current,
+        top: topAV.current
       };
 
   const staticStyle = {
     overflow: "auto",
     display: "flex",
-    flexDirection: "column",
+    flexDirection: "column"
   };
 
   const containerItemStyle = {
     display: "flex",
     flexDirection: "column",
-    justifyContent: "center",
+    justifyContent: "center"
   };
 
   return (
@@ -194,9 +194,9 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
           staticStyle,
           isDebug && {
             borderColor: "orange",
-            borderWidth: 2,
+            borderWidth: 2
           },
-          style,
+          style
         ]}
       >
         <View style={[{ flexGrow: 0, flexShrink: 0, flexBasis: "auto" }]}>
@@ -208,23 +208,20 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
           style={[
             containerItemStyle,
             { flexGrow: 1, flexShrink: 1 },
-            isDebug && { borderColor: "red", borderWidth: 2 },
+            isDebug && { borderColor: "red", borderWidth: 2 }
           ]}
         >
           <Animated.ScrollView
-            onContentSizeChange={(w, h) => {
-              console.warn("onContentSizeChange is TRIGGERED!");
-              setInitialOriginalHeight(w, h);
-            }}
+            onContentSizeChange={setInitialOriginalHeight}
             onScroll={setScrollOnScrolled}
             scrollEventThrottle={16}
             ref={bodyRef}
             style={[
               {
                 overflowY: "scroll",
-                height: "100%",
+                height: "100%"
               },
-              bodyStyle,
+              bodyStyle
             ]}
           >
             {/* https://stackoverflow.com/a/53689186 */}
@@ -243,7 +240,7 @@ DetailScrollableSticky.defaultProps = {
   isUsingTransform: false,
   isDebug: false,
   topOffset: 0,
-  minHeight: 0,
+  minHeight: 0
 };
 
 export default DetailScrollableSticky;

@@ -52,7 +52,7 @@ export default () => {
               header={<Dummy style={{ backgroundColor: "cyan" }} amount={2} />}
               footer={<Dummy style={{ backgroundColor: "cyan" }} amount={2} />}
             >
-              <Dummy style={{ backgroundColor: "cyan" }} amount={3} />
+              <Dummy style={{ backgroundColor: "cyan" }} amount={5} />
             </Sticky>
           </Column>
         </Row>
