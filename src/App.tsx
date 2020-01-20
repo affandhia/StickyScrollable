@@ -46,6 +46,7 @@ export default () => {
             <Sticky
               parentRef={parentRef}
               isDebug
+              isUsingTransform
               topOffset={200}
               minHeight={100}
               bottomOffset={50}
