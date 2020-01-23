@@ -14,12 +14,24 @@ interface DetailScrollableStickyProps {
   children: React.ReactNode;
   style?: Object;
   bodyStyle?: Object;
+  isScrollSync?: boolean;
 }
 
 interface Rectangle {
   height: number;
   top: number;
 }
+
+interface ComponentMeasurement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pageX: number;
+  pageY: number;
+}
+
+interface EmptyObject {}
 
 const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
   const {
@@ -33,7 +45,8 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
     footer,
     children,
     style,
-    bodyStyle
+    bodyStyle,
+    isScrollSync
   } = props;
 
   // type any due to https://stackoverflow.com/questions/51521809/typescript-definitions-for-animated-views-style-prop
@@ -66,90 +79,148 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
     setParentInfo();
   }, [parentRect, parentRef, setParentInfo]);
 
-  const setContainerRect = React.useCallback(
-    (callback?: Function) => {
-      containerRef.current &&
-        containerRef.current._component.measure((...args: any) => {
-          const wHeight = window ? window.innerHeight : -1;
-          const cHeight = args[3];
-          const isUseMinHeight = wHeight < 0 || !bottomOffset;
-          const tempHeight = isUseMinHeight
-            ? minHeight
-            : wHeight - topOffset - (bottomOffset ? bottomOffset : 0);
-          const finalHeight = tempHeight > cHeight ? cHeight : tempHeight;
-          containerRect.current = { top: args[5], height: finalHeight };
-          heightAV.current.setValue(finalHeight);
-          callback && callback(args);
-        });
+  const getComponentMeasurement = React.useCallback(
+    async (component, isWeb?): Promise<ComponentMeasurement> => {
+      if (isWeb) {
+        const dom = findNodeHandle(component); // could lead to performance drop
+        if (!dom) throw new Error("the component is not available.");
+        const rect = ((dom as unknown) as HTMLElement).getBoundingClientRect();
+        return {
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+          pageX: rect.left + (window ? window.scrollX : 0),
+          pageY: rect.top + (window ? window.scrollY : 0)
+        };
+      }
+      return await new Promise(resolve =>
+        component._component.measure(
+          (
+            x: number,
+            y: number,
+            width: number,
+            height: number,
+            pageX: number,
+            pageY: number
+          ) => {
+            resolve({ x, y, width, height, pageX, pageY });
+          }
+        )
+      );
     },
-    [bottomOffset, topOffset, minHeight]
+    []
+  );
+
+  const setContainerRect = React.useCallback(
+    async (callback?: Function) => {
+      const measurement = await getComponentMeasurement(
+        containerRef.current,
+        true
+      );
+      const wHeight = window ? window.innerHeight : -1;
+      const visibleHeight =
+        wHeight - topOffset - (bottomOffset ? bottomOffset : 0);
+      const remainingHeight = parentEndFromTop.current - measurement.pageY;
+      const finalHeight =
+        remainingHeight < visibleHeight ? remainingHeight : visibleHeight;
+      containerRect.current = { top: measurement.pageY, height: finalHeight };
+      heightAV.current.setValue(finalHeight);
+      callback && callback(measurement);
+    },
+    [bottomOffset, topOffset, getComponentMeasurement, parentEndFromTop]
   );
 
   const getScrollViewContentHeight = React.useCallback(() => {
-    return bodyRef.current ? findNodeHandle(bodyRef.current).scrollHeight : 0;
+    const dom = findNodeHandle(bodyRef.current);
+    return bodyRef.current && dom
+      ? ((dom as unknown) as HTMLElement).scrollHeight
+      : 0;
   }, []);
 
-  const setInitialOriginalHeight = React.useCallback((_, svHeight) => {
-    originalBodyHeight.current = svHeight;
-  }, []);
+  const setInitialOriginalHeight = React.useCallback(
+    (_, svHeight) => {
+      setContainerRect();
+      originalBodyHeight.current = svHeight;
+    },
+    [setContainerRect]
+  );
 
   const setScrollViewHeight = React.useCallback(event => {
     const { height } = event.nativeEvent.layout;
     originalBodyWrapperHeight.current = height;
   }, []);
 
-  const setScrollOnScrolled = React.useCallback(event => {
-    scrollPosition.current = event.nativeEvent.contentOffset.y;
-  }, []);
+  const setScrollOnScrolled = React.useCallback(
+    event => {
+      if (isScrollSync)
+        scrollPosition.current = event.nativeEvent.contentOffset.y;
+    },
+    [isScrollSync]
+  );
+
+  const getBodyMeasurement = React.useCallback(async (): Promise<
+    Partial<ComponentMeasurement>
+  > => {
+    if (!bodyWrapperRef.current) return {};
+    return await getComponentMeasurement(bodyWrapperRef.current);
+  }, [getComponentMeasurement, bodyWrapperRef]);
 
   React.useLayoutEffect(() => {
-    setContainerRect((args: number[]) => {
-      originalContainerHeight.current = args[3];
-      bodyWrapperRef.current &&
-        bodyWrapperRef.current._component.measure((...args: any) => {
-          const cHeight = args[3];
-          originalBodyWrapperHeight.current = cHeight;
-        });
+    setContainerRect();
+    getBodyMeasurement().then(measurement => {
+      if (measurement && measurement.height)
+        originalBodyWrapperHeight.current = measurement.height;
     });
-  }, [setContainerRect]);
+  }, [getBodyMeasurement, setContainerRect]);
+
+  const getTopOffset = React.useCallback(
+    async scrollY => {
+      const scrollYRelativeToParent = scrollY - parentRect.current.top;
+      const scrollYWithOffset = scrollYRelativeToParent + topOffset;
+      const scrollYPositive = scrollYWithOffset > 0 ? scrollYWithOffset : 0;
+      // set Top
+      let computedOfset = 0;
+      const measurement = await getComponentMeasurement(
+        containerRef.current,
+        true
+      );
+      const isContainerReachBottom =
+        scrollYPositive + measurement.height >= parentRect.current.height;
+      if (isContainerReachBottom) {
+        computedOfset = parentRect.current.height - measurement.height;
+      } else {
+        computedOfset = scrollYPositive;
+      }
+      return computedOfset;
+    },
+    [getComponentMeasurement, topOffset]
+  );
 
   useScrollPosition(
     (pos: CallbackParameter) => {
       const { prevPos, currPos } = pos;
       setParentInfo(); // handling content reflow caused by post-ssr render
 
-      const scrollYRelativeToParent = currPos.y - parentRect.current.top;
-      const scrollYWithOffset = scrollYRelativeToParent + topOffset;
-      const scrollYPositive = scrollYWithOffset > 0 ? scrollYWithOffset : 0;
-      if (scrollYPositive > parentRect.current.height) return;
-
-      const procedure = () => {
-        // set Top
-        let computedOfset = 0;
-        const isContainerReachBottom =
-          scrollYPositive + containerRect.current.height >=
-          parentRect.current.height;
-        if (isContainerReachBottom) {
-          computedOfset =
-            parentRect.current.height - containerRect.current.height;
-        } else {
-          computedOfset = scrollYPositive;
-        }
-        topAV.current.setValue(computedOfset);
+      const procedure = async () => {
+        topAV.current.setValue(await getTopOffset(currPos.y));
 
         // set scrollTop to bottom of page
-        const diff = currPos.y - prevPos.y;
-        const spVal = scrollPosition.current + diff;
-        const max =
-          getScrollViewContentHeight() - originalBodyWrapperHeight.current;
+        if (isScrollSync) {
+          const distance = currPos.y - prevPos.y;
+          const newScrollPosition = scrollPosition.current + distance;
+          const maxScroll =
+            getScrollViewContentHeight() - originalBodyWrapperHeight.current;
+          const clampedVal =
+            newScrollPosition >= maxScroll ? maxScroll : newScrollPosition;
 
-        const clampedVal = spVal >= max ? max : spVal;
-        scrollPosition.current = spVal < 0 ? 0 : clampedVal;
-        bodyRef.current &&
-          bodyRef.current._component.scrollTo({
-            y: scrollPosition.current,
-            animated: false
-          });
+          scrollPosition.current = newScrollPosition < 0 ? 0 : clampedVal;
+          bodyRef.current &&
+            bodyRef.current._component.scrollTo({
+              y: scrollPosition.current,
+              animated: false
+            });
+        }
       };
 
       procedure();
@@ -161,7 +232,7 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
 
   const containerStyle = isUsingTransform
     ? {
-        height: heightAV.current,
+        maxHeight: heightAV.current,
         transform: [
           {
             translateY: topAV.current
@@ -169,7 +240,7 @@ const DetailScrollableSticky = (props: DetailScrollableStickyProps) => {
         ]
       }
     : {
-        height: heightAV.current,
+        maxHeight: heightAV.current,
         top: topAV.current
       };
 

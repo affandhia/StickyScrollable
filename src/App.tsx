@@ -46,10 +46,10 @@ export default () => {
             <Sticky
               parentRef={parentRef}
               isDebug
-              isUsingTransform
+              isScrollSync
               topOffset={200}
               minHeight={100}
-              bottomOffset={50}
+              bottomOffset={10}
               header={<Dummy style={{ backgroundColor: "cyan" }} amount={2} />}
               footer={<Dummy style={{ backgroundColor: "cyan" }} amount={2} />}
             >
